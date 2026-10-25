@@ -1,0 +1,26 @@
+# Upstream reference code
+reference/
+
+# Competition data & assets
+data/
+*.mp4
+*.m4v
+*.json
+*.csv
+!gt/*.csv
+
+# Virtual environments & cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Model checkpoints & artifacts
+checkpoints/
+models/*.pt
+models/*.onnx
+models/*.pkl
+
+# Large generated outputs (except final tracked submissions if desired)
+submissions/*.csv
