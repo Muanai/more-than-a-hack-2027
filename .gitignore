@@ -15,6 +15,7 @@ venv/
 __pycache__/
 *.py[cod]
 .ipynb_checkpoints/
+__marimo__/
 
 # Model checkpoints & artifacts
 checkpoints/
