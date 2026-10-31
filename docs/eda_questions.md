@@ -50,7 +50,12 @@ count plausibility, stability under perturbation, or agreement across halves).
 - **Measured (2026-10-31)**: ball availability **88.2%** in the window vs **59.3%** in the graded blocks
   (1st half 59.4%, 2nd half 59.3%). **The window is not representative on the single most important
   quality dimension.** Treat every window ball statistic as optimistic.
-- **Answer / Findings**: *(To be answered — add tracked-player density and out-of-bounds rate)*
+- **Answer / Findings (`[FULL]`)**:
+  - **Ball availability**: **88.20%** in the 5-min window vs **59.31%** in graded play (1st Half `59.35%`, 2nd Half `59.27%`, Full Video `56.94%`) — a **+48.7% relative discrepancy**.
+  - **Tracked-player density**: Mean **21.57** (median 22) in the window vs **20.49** (median 22) in graded play (`20.12` in 1st Half, `20.85` in 2nd Half).
+  - **Low-density & duplicate frames**: Frames with `<10` tracked players occur on **0.00%** of the window vs **3.05%** of graded play (`4.18%` in 1st Half, `1.91%` in 2nd Half). Frames with `>22` players occur on **0.05%** of the window vs **2.36%** of graded play.
+  - **Ball out-of-bounds rate (among present frames)**: **1.60%** in the window vs **4.19%** in graded play (`2.72%` in 1st Half, `5.67%` in 2nd Half) — a **2.6× discrepancy**.
+  - **Gate triggered**: Both ball availability and OOB rate exceed the 10% relative difference threshold. The 5-min public window is an unusually clean opening stretch; no hyperparameter (especially smoothing width or missing-ball handling) may be tuned on it directly.
 
 ### 0.3 Q0.2 — What does `spellF1` actually reward? `[DERIVED]`
 
@@ -69,7 +74,13 @@ count plausibility, stability under perturbation, or agreement across halves).
 - **Decision rule**: the distortion with the steepest initial slope sets the priority order of the
   whole project. Expected — but must be measured — that case 2 (fragmentation) dominates, in which
   case no per-frame modelling work is worth doing before segmentation is under control.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[DERIVED]`)**:
+  - **1. Boundary shift ($\delta$)**: $\delta = 1\text{f}$ and $\delta = 3\text{f}$ (`0.12s`) cost **0.0000** in `spellF1` (`1.0000`); $\delta = 8\text{f}$ (`0.32s`) → `0.9529`; $\delta = 25\text{f}$ (`1.00s`) → `0.7765` (`macroF1 = 0.9331`); $\delta = 50\text{f}$ (`2.00s`) → `0.5882`.
+  - **2. Fragmentation ($k$ splits per spell)**: Splitting each spell into just **$k = 2$** pieces via a 1-frame `D` blip crashes `spellF1` from **1.0000 → 0.3137** (`spellF1@0.5 = 0.2353`) while `macroF1` stays at **0.9971**! At $k = 3$, `spellF1 = 0.1000` (`macroF1 = 0.9942`); at $k = 5$, **`spellF1 = 0.0000`** (`macroF1 = 0.9886`).
+  - **3. Failed `D` call (merging across `D`)**: Merging same-team spells across `D` (1 `A–D–A` run in the window) keeps `spellF1 = 0.9455` (`macroF1 = 0.8997`). Even erasing all 4 `D` runs completely leaves `spellF1 = 0.8121` (`macroF1 = 0.5913`).
+  - **4. Dropping short spells ($< L\text{ s} \to \text{D}$)**: $L = 0.5\text{s} \to 1.0000$; $L = 1.0\text{s} \to 0.9697$ (`16` spells); $L = 2.0\text{s} \to 0.9375$ (`15` spells); $L = 4.0\text{s} \to 0.7857$ (`11` spells).
+  - **5. Flipping team on fraction $f$ of spells**: $f = 0.05$ (`1/17`) → `0.9455`; $f = 0.10$ (`2/17`) → `0.8485`; $f = 0.20$ (`3/17`) → `0.7500`.
+  - **Priority Order**: **Fragmentation (Case 2) is fatal** (steepest slope by far: `-0.686` for a single split per spell). Temporal segmentation / anti-flicker filtering is strictly priority #1; team attribution per spell is #2; dead-ball boundary precision is #3; recovering sub-second spells ($<1\text{s}$) is lowest priority.
 
 ### 0.4 Q0.3 — Which sub-problem binds: alive/dead, or home/away? `[GT-5MIN]`
 
@@ -81,7 +92,14 @@ count plausibility, stability under perturbation, or agreement across halves).
   dead-ball stability or possession identity — they call for different fixes.
 - **Decision rule**: whichever of `alive_dead_f1` / `team_acc_both_alive` moves least across the window
   sweep is not the bottleneck; do not spend feature work on it.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  | Baseline | `spellF1` | `spellF1@0.5` | `macroF1` | `alive_dead_f1` | `team_acc_both_alive` | `n_pred_spells` | `fragmentation` |
+  |---|---|---|---|---|---|---|---|
+  | `baseline_raw` | 0.0378 | 0.0270 | 0.5972 | 0.8920 | 0.7784 | 131 | 6.52 |
+  | `baseline_smooth25` | 0.2868 | 0.3019 | 0.6200 | 0.8974 | 0.8271 | 36 | 1.90 |
+  | `baseline_smooth50` | 0.3256 | 0.3256 | 0.6207 | 0.8990 | 0.8582 | 26 | 1.43 |
+  | `baseline_smooth125` | 0.4242 | 0.4242 | 0.5812 | 0.8991 | 0.8854 | 16 | 0.81 |
+  - **Finding**: `alive_dead_f1` is virtually constant across the entire sweep (`0.8920 → 0.8991`, total span `0.0071`). The 11.2× gain in `spellF1` comes from eliminating `H ↔ A` flicker (`n_pred_spells` dropping from `131` to `16`) and lifting `team_acc_both_alive` from `0.7784` to `0.8854`. (Note however from Q0.1 that on the full match, ball visibility is 59.3% rather than 88.2%, so naive missing-ball = `D` degrades much more outside the window).
 
 ---
 
@@ -119,8 +137,9 @@ index.
 - **Measured (2026-10-31)**: H 3,454 (**46.1%**), A 2,577 (**34.4%**), D 1,469 (**19.6%**). Dead ball is
   a fifth of graded frames but only 4 of 21 segments — the frame share and the segment share are
   different numbers, and `spellF1` scores the second.
-- **Answer / Findings**: *(Assert against the table in §1, then report the three-class priors used
-  downstream)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Frame vs Segment shares**: `H = 3,454 (46.05%)` frames vs `8/21 (38.10%)` segments; `A = 2,577 (34.36%)` frames vs `9/21 (42.86%)` segments; `D = 1,469 (19.59%)` frames vs `4/21 (19.05%)` segments.
+  - **Constant-guess baselines**: Predicting all-`H` scores `macroF1 = 0.2102`, all-`A` scores `0.1705`, and all-`D` scores `0.1092`; all three score `0.0000` on `spellF1` (`@0.3..0.7` and `@0.5`).
 
 ### 2.2 Q2.2 — Duration distribution of real possessions
 
@@ -136,8 +155,30 @@ index.
   Distribution is strongly right-skewed: 6 of 17 spells are under 6 s, 2 are under 2 s.
   Dead-ball runs: mean **14.69 s**, median **16.40 s**, min **5.52 s**, max **20.44 s** — dead-ball
   stretches are *longer and more uniform* than possessions.
-- **Answer / Findings**: *(To be answered — paste the 17 durations into the notebook table; re-check
-  against meta.json's 14.191 s mean)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Summary by class**:
+    - `H` (8 spells): min `0.76s` (`19f`), Q25 `2.94s`, median `9.96s` (`249f`), mean `17.27s` (`431.8f`), Q75 `31.86s`, max `42.44s` (`1,061f`).
+    - `A` (9 spells): min `2.84s` (`71f`), Q25 `3.60s`, median `7.44s` (`186f`), mean `11.45s` (`286.3f`), Q75 `16.04s`, max `35.72s` (`893f`).
+    - Combined alive (17 spells): min `0.76s`, Q25 `3.48s`, median `7.56s`, mean **`14.191s`** (matches `meta.json`), Q75 `20.00s`, max `42.44s`.
+    - `D` (4 runs): min `5.52s` (`138f`), Q25 `12.24s`, median `16.40s` (`410f`), mean `14.69s` (`367.2f`), Q75 `18.85s`, max `20.44s` (`511f`).
+  - **Full 17-spell list (sorted by duration, with chronological Spell # and frame span)**:
+    1. `0.76s` (`19f`, Spell #10, `H`, `15,346..15,365`)
+    2. `1.32s` (`33f`, Spell #12, `H`, `15,766..15,799`)
+    3. `2.84s` (`71f`, Spell #3, `A`, `11,553..11,624`)
+    4. `3.24s` (`81f`, Spell #7, `A`, `13,704..13,785`)
+    5. `3.48s` (`87f`, Spell #15, `H`, `17,293..17,380`)
+    6. `3.60s` (`90f`, Spell #13, `A`, `15,799..15,889`)
+    7. `6.64s` (`166f`, Spell #1, `A`, `11,185..11,351`)
+    8. `7.44s` (`186f`, Spell #5, `A`, `12,665..12,851`)
+    9. `7.56s` (`189f`, Spell #16, `A`, `17,838..18,027`)
+    10. `8.08s` (`202f`, Spell #2, `H`, `11,351..11,553`)
+    11. `11.84s` (`296f`, Spell #17, `H`, `18,389..18,685`)
+    12. `16.04s` (`401f`, Spell #11, `A`, `15,365..15,766`)
+    13. `20.00s` (`500f`, Spell #9, `A`, `14,846..15,346`)
+    14. `28.60s` (`715f`, Spell #6, `H`, `12,989..13,704`)
+    15. `35.72s` (`893f`, Spell #14, `A`, `16,400..17,293`)
+    16. `41.64s` (`1,041f`, Spell #4, `H`, `11,624..12,665`)
+    17. `42.44s` (`1,061f`, Spell #8, `H`, `13,785..14,846`)
 
 ### 2.3 Q2.3 — What boundary accuracy does each spell length require? `[DERIVED]`
 
@@ -173,7 +214,11 @@ index.
   Reading: at IoU 0.5 a 1 s boundary error costs the six shortest spells outright, and the 0.76 s spell
   needs **3-frame** accuracy. Two-thirds of the value sits in the long spells, where the tolerance is
   generous.
-- **Answer / Findings**: *(To be answered — the notebook should compute this table, not hard-code it)*
+- **Answer / Findings (`[DERIVED]`)**:
+  - **Spell survival counts under symmetric boundary error $b \in \{0.5\text{s}, 1.0\text{s}, 2.0\text{s}\}$**:
+    - `@ IoU 0.3`: `15/17 (88.2%)` survive `0.5s`, `11/17 (64.7%)` survive `1.0s`, `10/17 (58.8%)` survive `2.0s`.
+    - `@ IoU 0.5`: `14/17 (82.4%)` survive `0.5s`, `11/17 (64.7%)` survive `1.0s`, `6/17 (35.3%)` survive `2.0s`.
+    - `@ IoU 0.7`: `11/17 (64.7%)` survive `0.5s`, `7/17 (41.2%)` survive `1.0s`, `4/17 (23.5%)` survive `2.0s`.
 
 ### 2.4 Q2.4 — What do possession transitions look like?
 
@@ -186,7 +231,9 @@ index.
   `D→H` 2, `H→D` 1. **12 of 20 turnovers never touch `D`.** The hypothesis "dead ball mediates most
   turnovers" is false in the window. Also note the minimum gap between transitions is what a smoothing
   window can silently destroy — report it.
-- **Answer / Findings**: *(To be answered — add the inter-transition gap distribution)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Transition counts**: `A→H: 6 (30%)`, `H→A: 6 (30%)`, `A→D: 3 (15%)`, `D→A: 2 (10%)`, `D→H: 2 (10%)`, `H→D: 1 (5%)`. Direct live-play turnovers account for `60%` of all state transitions.
+  - **Inter-transition gap distribution** (`19` intervals between the `20` transition points): min **`19f (0.76s)`**, Q25 **`88f (3.54s)`**, median **`202f (8.08s)`**, mean **`370.4f (14.82s)`**, Q75 **`479f (19.16s)`**, max **`1,061f (42.44s)`**.
 
 ### 2.5 Q2.5 — What do dead-ball runs look like?
 
@@ -196,9 +243,14 @@ index.
   failed `D` merges two possessions and destroys both). The count of `D` runs bounds how much of the
   score is decided by dead-ball detection.
 - **Measured (2026-10-31)**: 4 `D` runs at 12,851–12,989 (5.5 s), 15,889–16,400 (20.4 s),
-  17,380–17,838 (18.3 s), 18,027–18,389 (14.5 s). Only two are bracketed by a change of team; two sit
-  between an `A` spell and an `A` spell.
-- **Answer / Findings**: *(To be answered)*
+  17,380–17,838 (18.3 s), 18,027–18,389 (14.5 s).
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Correction to initial visual inspection**: **3 of the 4 `D` runs** mediate a change of team, and **only 1** sits between same-team (`A → D → A`) spells:
+    1. `12,851..12,989` (`138f / 5.52s`): `A → D → H` (**Turnover**; ball visible on `95.7%` of frames)
+    2. `15,889..16,400` (`511f / 20.44s`): `A → D → A` (**Same-team retain**; ball visible on `24.1%` of frames)
+    3. `17,380..17,838` (`458f / 18.32s`): `H → D → A` (**Turnover**; ball visible on `85.6%` of frames)
+    4. `18,027..18,389` (`362f / 14.48s`): `A → D → H` (**Turnover**; ball visible on `89.0%` of frames)
+  - Because `15,889..16,400` is the only same-team `D` barrier, failing to call `D` while keeping `H`/`A` labels right only merges that single `A–D–A` pair (confirming Q0.2's finding that `spellF1` stays at `0.9455`).
 
 ---
 
@@ -220,8 +272,19 @@ index.
   all missing frames; ≤25 frames: 43 gaps covering **0.2%**; ≤125 frames: 44 gaps covering **0.2%**.
   **Interpolation is worth at most 0.2% of the missing ball. The missingness is blocky, not flickery.**
   In the 5-minute window: only 6 gaps, median 140 frames.
-- **Answer / Findings**: *(To be answered — add the gap-start phase breakdown, and check whether long
-  gaps coincide with camera/halftime structure rather than with play)*
+- **Answer / Findings (`[FULL]`)**:
+  - **Gap-start phase breakdown**:
+    - `1st Half (11,185–90,651)`: `68` gaps, `32,659` missing frames, median **`293f (11.72s)`**, p90 `1,073f (42.9s)`, max `3,466f (138.64s)`.
+    - `2nd Half (110,808–190,197)`: `81` gaps, `32,634` missing frames, median **`260f (10.40s)`**, p90 `639f (25.6s)`, max `5,537f (221.48s)`.
+    - `Halftime`: `31` gaps (`838` missing frames, median `4f`, max `523f`).
+    - `Pre-match`: `5` gaps (`11,011` missing frames, max `5,529f`); `Post-match`: `1` gap (`8,689` missing frames / `347.56s`).
+  - **Graded-play cumulative gap share** (`149` gaps, `65,293` missing frames starting in graded halves):
+    - `≤ 5f (0.20s)`: `13` gaps (`29` frames, **`0.044%`** of graded missing frames)
+    - `≤ 12f (0.48s)`: `15` gaps (`51` frames, **`0.078%`**)
+    - `≤ 25f (1.00s)`: `16` gaps (`73` frames, **`0.112%`**)
+    - `≤ 50f (2.00s)`: `16` gaps (`73` frames, **`0.112%`**)
+    - `≤ 125f (5.00s)`: `38` gaps (`2,358` frames, **`3.611%`**)
+  - **Decision outcome**: `0.078% ≪ 10%` threshold — **do not build an interpolation module**; treat ball absence as a persistent state regime requiring player-context and carry-forward priors.
 
 ### 3.2 Q3.2 — What match state do we observe when the ball is missing? `[GT-5MIN]`
 
@@ -235,8 +298,12 @@ index.
   have a visible ball, and ball absence is *least* likely during home possession. The asymmetry between
   `H` and `A` (99.9% vs 85.0%) is almost certainly a camera/tracking artefact, not football — confirm
   or refute before using ball presence as a feature.
-- **Answer / Findings**: *(To be answered — include the reverse conditional and the H/A asymmetry
-  check against camera position)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Forward conditional $P(\text{Ball} \mid \text{GT})$**: `H = 99.86%` (`3,449/3,454` present), `A = 85.02%` (`2,191/2,577`), `D = 66.37%` (`975/1,469`).
+  - **Reverse conditional $P(\text{GT} \mid \text{Ball})$**:
+    - Given **Ball Present** (`6,615f`): `H = 52.14%`, `A = 33.12%`, `D = 14.74%`.
+    - Given **Ball Absent** (`885f`): `D = 55.82%` (`494f`), `A = 43.62%` (`386f`), `H = 0.56%` (`5f`). Nearly **44% of missing-ball frames in the window are live Away possession**, proving that `ball_nan ⇒ D` is structurally broken.
+  - **Camera / spatial asymmetry check**: When the ball is visible in the window, mean pitch `y` is **`0.709` during `A` possession** (far touchline from the main camera) vs **`0.445` during `H` possession** (`mean(x)` is `0.620` for `H` vs `0.565` for `A`). The `H` vs `A` dropout gap is a far-side camera/tracker occlusion artefact; raw `ball_present` must never be used as a team-discriminative feature.
 
 ### 3.3 Q3.3 — Is the ball we do see physically plausible? `[FULL]`
 
@@ -252,8 +319,12 @@ index.
   (0 steps above 625 m/s), but ~1% of steps exceed 50 m/s, above any real ball speed. Median ball speed
   over the whole match is 5.5 m/s, which is low for a live ball — consistent with the tracker holding a
   stationary position while the ball is out of view.
-- **Answer / Findings**: *(To be answered — this is a high-value question; localise the implausible
-  steps)*
+- **Answer / Findings (`[FULL]`)**:
+  - **Consecutive ball-present step distribution** (`113,303` steps): `p50 = 5.54 m/s`, `p90 = 17.23 m/s`, `p99 = 50.33 m/s`, `p99.9 = 84.66 m/s`, `max = 133.99 m/s`.
+  - **Implausible step counts & localisation**:
+    - Steps `> 40 m/s`: **`2,043` (`1.80%` of steps)**; steps `> 50 m/s`: **`1,158` (`1.02%`)**.
+    - Spatial localisation of `> 40 m/s` steps: only **`8.4%` (`171`)** occur within 5% of the pitch border and **`1.7%` (`35`)** inside penalty boxes — the remaining ~90% happen in open play when the tracker snaps from a stale held position to the re-acquired ball.
+  - **Decision outcome**: At `1.80%` (right at the `~2%` boundary) plus frequent stationary-ball holding during occlusion, include derived ball speed and acceleration (and a `> 40 m/s` jump indicator) directly as features so downstream models down-weight proximity during tracker snaps/stalls.
 
 ### 3.4 Q3.4 — Is the exported `ball_speed` column usable? `[FULL]`
 
@@ -266,7 +337,8 @@ index.
 - **Measured (2026-10-31)**: `ball_speed` non-`NaN` on **9,909 / 199,319 frames (5.0%)**, only within
   frames 54,835–187,821, and **0 frames inside the public window**. Unusable as a feature; derive speed
   from positions and document the decision.
-- **Answer / Findings**: *(Assert in the notebook; add to the technical document as a dropped asset)*
+- **Answer / Findings (`[FULL]`)**:
+  - Asserted in `notebooks/eda.py`: `ball_speed` is non-`NaN` on `9,909 / 199,319` frames (`4.97%`), restricted to frames `54,835..187,821`, **`0` frames in the public window**, `0` frames where `ball_x` is `NaN`, and correlates at **`-0.0975`** with finite-difference ball speed where present. **Dropped permanently from all feature pipelines.**
 
 ---
 
@@ -286,7 +358,13 @@ index.
 - **Measured (2026-10-31)**: **46 slots = 24 home + 22 away** for 22 players on the pitch — the home
   side carries two extra slots. Mean tracked objects on graded frames is 20.5, and the tracker
   occasionally exceeds 22 by duplicating someone.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[FULL]`)**:
+  - **Inactive / pre-post-only slots**: Exactly **3 of the 46 slots have `0` active frames during the `158,857` graded frames**:
+    - `Track 22` (`p22`, Home): `44` active frames total (`0` graded), `6.82%` duplicate overlap (`< 1.0 m` same-team).
+    - `Track 23` (`p23`, Home): `107` active frames total (`0` graded), **`66.36%`** duplicate overlap.
+    - `Track 44` (`p44`, Away): `0` active frames across the entire video.
+  - **Graded-active slots (`43` slots = `22` Home + `21` Away)**: Every single graded-active slot has `< 5%` duplicate overlap (the highest are `Track 13` at `4.53%` and `Track 5` at `4.40%`). On graded ball-present frames, the nearest player to the ball belongs to a currently duplicated (`< 1.0 m` same-team) slot on **`2.99%`** of frames.
+  - **Decision outcome**: Exclude `p22`, `p23`, and `p44` by the documented rule (`0` graded frames / `> 5%` duplicate rate); retain all `43` graded-active slots (`22 H + 21 A`).
 
 ### 4.2 Q4.2 — What does distance-to-ball look like during possession? `[GT-5MIN]`
 
@@ -301,7 +379,16 @@ index.
   (margin, rank, team-aggregate).
 - **Measured (2026-10-31)**, unconditioned, window, ball present: nearest home median **3.27 m**
   (p90 9.15), nearest away median **5.49 m** (p90 16.87). The class-conditional split is still open.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Class-conditional distance distributions on `6,615` ball-present window frames**:
+
+    | GT Class | Frames | `d_H` p25 / Med / p75 (m) | `d_A` p25 / Med / p75 (m) | `min(d_H, d_A)` Med / p90 (m) | Margin `d_A − d_H` p25 / Med / p75 (m) |
+    |---|---:|---|---|---|---|
+    | `H` | 3,449 | **0.91 / 1.90 / 4.60** | 3.97 / 6.82 / 9.56 | 1.64 / 5.86 | **+0.48 / +3.44 / +7.54** |
+    | `A` | 2,191 | 2.87 / 4.75 / 7.90 | **0.78 / 2.11 / 4.98** | 1.68 / 6.35 | **−4.44 / −1.82 / +0.01** |
+    | `D` | 975 | 1.36 / 4.75 / 8.04 | 8.89 / 16.86 / 21.43 | 2.89 / 9.68 | +5.11 / +11.38 / +17.50 |
+
+  - **Decision outcome**: During `H` and `A`, the possessing team's median distance is ~`2.0 m` (`p75 ≈ 4.8 m`, when the ball is in flight between passes), heavily overlapping the defending team's `p25` (`2.87–3.97 m`). Absolute distance thresholds fail during passes; relative features (`d_A − d_H`, `(d_A − d_H)/(d_A + d_H)`, top-$k$ team distance ranks) are mandatory.
 
 ### 4.3 Q4.3 — How often does the nearest player not belong to the possessing team? `[GT-5MIN]`
 
@@ -318,7 +405,14 @@ index.
   (n = 536, i.e. near coin-flip but only 9.5% of frames). Flicker: **136 nearest-team changes in 7,500
   frames against 21 true segments — 6.5× over-segmentation.** `baseline_raw` predicts 131 possessions
   (spellF1 0.038) while holding `macroF1` 0.597.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Accuracy breakdown on `5,640` alive ball-present frames**:
+    - Overall `argmin(d_H, d_A)` accuracy: **`77.84%`** (`H` only: **`79.73%`** on `3,449f`; `A` only: **`74.85%`** on `2,191f`).
+    - By margin `|d_A − d_H|`:
+      - `≤ 0.5 m` (`536f`, `9.50%` of alive ball-present): **`56.90%`** accuracy (contested duels / close marking — effectively coin-flip).
+      - `0.5–2.0 m` (`1,337f`, `23.71%`): **`65.45%`** accuracy.
+      - `> 2.0 m` (`3,767f`, `66.79%`): **`85.21%`** accuracy.
+  - **Flicker count**: On consecutive ball-present frames, `argmin(d_H, d_A)` flips **`127` times** (`128` contiguous team runs), and **`136` total label transitions** when including `D` gaps — a **6.8× transition excess** over the `20` true transitions (`21` segments).
 
 ---
 
@@ -338,7 +432,14 @@ question in this document's model of the problem. These four questions exist to 
   and whether a median filter, a hysteresis band, or an explicit state machine is the right tool.
 - **Decision rule**: if more than half of raw runs are shorter than 0.5 s, a minimum-dwell rule is
   mandatory before any team classification is even evaluated.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Raw `argmin(d_H, d_A)` on ball-present frames (`128` runs)**:
+    - Run lengths: `p10 = 5.0f (0.20s)`, **`median = 18.5f (0.74s)`**, `mean = 51.7f (2.07s)`, `p90 = 124.2f (4.97s)`.
+    - Share of short runs: `< 6f (0.24s) = 12.5%`, `< 12f (0.48s) = 32.0%`, **`< 25f (1.00s) = 54.7%`**, **`< 50f (2.00s) = 68.0%`**.
+  - **Last-team carry-forward across all `7,500` frames (`129` runs)**:
+    - Run lengths: `p10 = 5.0f (0.20s)`, **`median = 19.0f (0.76s)`**, `mean = 58.1f (2.33s)`, `p90 = 149.4f (5.98s)`.
+    - Share of short runs: `< 6f = 12.4%`, `< 12f = 32.6%`, **`< 25f = 54.3%`**, **`< 50f = 66.7%`**.
+  - **Decision outcome**: Nearly a third of raw runs are `< 0.5s` and **over half (`54.7%`) are `< 1.0s`** (triggered when a pass travels past a defender or during a brief duel). A temporal state-machine / hysteresis / minimum-dwell decoder is mandatory.
 
 ### 5.2 Q5.2 — How does `spellF1` respond to predicted possession count? `[DERIVED]`
 
@@ -351,8 +452,23 @@ question in this document's model of the problem. These four questions exist to 
 - **Decision rule**: adopt `n_pred_spells` per 5 minutes (or mean spell duration) as the full-match
   selection criterion. **Do not** select the parameter by maximising public-window `spellF1` — the
   competition's own documentation shows that picks the wrong setting.
-- **Answer / Findings**: *(To be answered — expect a sharp peak; record its width, since the plateau
-  defines the safe parameter range)*
+- **Answer / Findings (`[DERIVED]`)**:
+  - **Majority-vote half-window sweep $w \in \{0..200\}$ (`window = 2w+1` frames)**:
+
+    | $w$ (frames) | Window `2w+1` (s) | Window `spellF1` | Window `macroF1` | Window `n_pred_spells` | Full-Match Spells / 5-min | Full-Match Mean Spell (s) |
+    |---:|---:|---:|---:|---:|---:|---:|
+    | 0 | 0.04s | 0.0378 | 0.5973 | 131 | 92.0 | 1.98s |
+    | 6 | 0.52s | 0.1463 | 0.6134 | 65 | 55.6 | 3.31s |
+    | 12 | 1.00s | 0.2424 | 0.6197 | 49 | 44.3 | 4.18s |
+    | 25 | 2.04s | 0.2868 | 0.6258 | 36 | 35.2 | 5.41s |
+    | 50 | 4.04s | 0.3256 | 0.6207 | 26 | 28.0 | 7.24s |
+    | 75 | 6.04s | 0.4000 | 0.6034 | **18** | 24.6 | 8.74s |
+    | 100 | 8.04s | **0.4485** | 0.5976 | **16** | 21.5 | 10.47s |
+    | 125 | 10.04s | 0.4242 | 0.5812 | 16 | 18.8 | 12.40s |
+    | 150 | 12.04s | 0.4375 | 0.5665 | 15 | **17.2** | **13.95s** |
+    | 200 | 16.04s | 0.4000 | 0.5567 | 13 | 14.9 | 16.57s |
+
+  - **Key architectural takeaway**: In the public window, `n_pred_spells` crosses `17` between `w = 75` (`18` spells) and `w = 100` (`16` spells). However, in the baseline's naive majority voter, `D` is only emitted when *every* frame in `2w+1` has a missing ball—so large `w` erases real dead-ball stoppages (`macroF1` peaks at `w = 25` and drops steadily for `w ≥ 50`). **Decoupling `Alive vs D` segmentation from `H vs A` spell smoothing** allows us to reach the target full-match scale (~`16–19` spells per 5 minutes, mean duration ~`12–15s`) without erasing dead balls.
 
 ### 5.3 Q5.3 — Where do transitions actually get missed? `[GT-5MIN]`
 
@@ -363,7 +479,13 @@ question in this document's model of the problem. These four questions exist to 
   decision point earlier or later, which is a free score improvement if it is consistent.
 - **Decision rule**: if mean latency exceeds ~6 frames in magnitude and is consistent in sign, correct
   it explicitly and re-measure; if it is small and zero-mean, leave it alone.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Transition evaluation across baselines (`20` true GT transitions)**:
+    - `baseline_raw`: `@τ=12` `P=0.037, R=0.250, F1=0.064` (`5` matched, `15` missed, `131` spurious, mean latency `-1.60f`); `@τ=25` `P=0.081, R=0.550, F1=0.141` (`11` matched, `125` spurious, `2` ambiguous, mean latency `-3.09f`, median `-4.0f`).
+    - `baseline_smooth25`: `@τ=12` `P=0.128, R=0.250, F1=0.169` (`5` matched, `34` spurious, mean latency `+5.00f`, median `+7.0f`); `@τ=25` `P=0.154, R=0.300, F1=0.203` (`6` matched, `33` spurious, mean latency `+8.17f`, median `+9.0f`).
+    - `baseline_smooth50`: `@τ=12` & `@τ=25` both `P=0.069, R=0.100, F1=0.082` (`2` matched, `18` missed, `27` spurious, mean latency `+4.00f`).
+    - `baseline_smooth125`: `@τ=12` `P=0.125, R=0.100, F1=0.111` (`2` matched, `14` spurious, mean latency `-0.50f`); `@τ=25` `P=0.188, R=0.150, F1=0.167` (`3` matched, `13` spurious, mean latency `-7.67f`).
+  - **Finding**: Centered window smoothing does not introduce a uniform one-way phase lag; rather, `70–90%` of true transitions are missed within `±25f` because passes and dead-ball restarts take more than `1s` for nearest-player geometry to cross over.
 
 ### 5.4 Q5.4 — What does an abstention (`X`) actually cost? `[DERIVED]`
 
@@ -377,7 +499,12 @@ question in this document's model of the problem. These four questions exist to 
 - **Decision rule**: if the measured cost inside a possession is zero, the pipeline should emit `X`
   whenever its confidence is below threshold *and* it believes it is mid-possession; write the
   abstention policy explicitly rather than leaving it as a constant label.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[DERIVED]`)**:
+  - **Empirical `X`-injection sweep (`L ∈ {5, 25, 50}` frames)**:
+    - **Mid-possession (`12,000`) & Inside `D` (`16,000`)**: `ΔspellF1 = 0.0000` for all `L` (because `_forward_fill_x()` replaces `X` with the preceding non-`X` label), while `ΔmacroF1` is **`-0.0002` (`5f`), `-0.0012` (`25f`), `-0.0023` (`50f`)** on GT and **`-0.0003` to `-0.0058`** on `smooth50` (because `macroF1` counts `X` as a false negative on the true class).
+    - **Across a true transition (`12,665`)**: Shifting the transition by `L` frames via `X` costs `ΔmacroF1 = -0.0002` to `-0.0022` (`ΔspellF1 = 0.0000` on a `41.6s → 7.4s` boundary, though fatal on short spells).
+    - **Start of half (`11,185`)**: Leading `X` frames at the start of a graded half cannot be forward-filled and remain `'X'` in `_extract_spells`, trimming the opening spell (`ΔmacroF1 = -0.0004` to `-0.0040`).
+  - **Crucial insight & decision outcome**: Because the scorer's `_forward_fill_x()` literally just forward-fills the previous predicted label for `spellF1` while penalising `macroF1` on every `X` frame, **emitting `X` on graded frames is strictly dominated by forward-filling the previous label ourselves in code** (which gets the exact same `spellF1` with higher `macroF1`). Therefore: **emit `X` on all `40,462` ungraded frames (`0..11,184`, `90,652..110,807`, `190,198..199,318`), and emit concrete `H`/`A`/`D` labels on all `158,857` graded frames.**
 
 ---
 
@@ -395,7 +522,13 @@ question in this document's model of the problem. These four questions exist to 
 - **Measured (2026-10-31)**: among ball-present window frames — `H` **0.0%**, `A` **0.1%**,
   `D` **10.7%** out of bounds. High precision, roughly 11% recall: it fires almost only on dead ball,
   but misses 9 dead-ball frames in 10. Only 4.4% of all present ball frames are out of bounds.
-- **Answer / Findings**: *(To be answered — add lead/lag and the margin sensitivity)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Precision / Recall by boundary margin**:
+    - **Strict OOB (`< 0` or `> 1`, `106` frames)**: **`98.11%` instant precision** for `D` (`104/106` frames; `0` `H`, `2` `A`), **`100.0%` precision within a `+5s (125f)` horizon**, **`10.67%` recall on ball-present `D`**, and **`7.08%` recall on all `D` frames**.
+    - **Inner margin `0.005` (`< 0.005` or `> 0.995`, `230` frames)**: instant precision drops to **`62.61%`** (`+5s` precision `69.57%`), recall on present `D` rises to `14.77%`.
+    - **Inner margin `0.010` (`334` frames)**: instant precision **`45.81%`**; **Inner margin `0.020` (`590` frames)**: instant precision **`27.80%`**.
+  - **Lead / lag against the 4 `D` runs**: Strict OOB fires on **2 of the 4 `D` runs**—crossing the line **`2 frames (-0.08s)` before** `D` Run #4 (`18,027..18,389`, fire at `18,025`) and **`76 frames (+3.04s)` after** the start of `D` Run #3 (`17,380..17,838`, fire at `17,456`). The other 2 `D` runs (fouls / in-pitch stoppages) never go OOB.
+  - **Decision outcome**: Strict OOB (`< 0` or `> 1`) is a near-100%-precision dead-ball trigger, whereas inner margins (`≥ 0.5%` inside the line) are heavily polluted by live wing play. Use strict OOB + signed distance outside `[0, 1]` as a high-precision `D` feature/trigger.
 
 ### 6.2 Q6.2 — Do players slow down during dead balls? `[GT-5MIN]`
 
@@ -407,7 +540,17 @@ question in this document's model of the problem. These four questions exist to 
   precisely on the frames where the ball is missing.
 - **Decision rule**: a feature is worth building only if its best single-threshold separation is
   clearly above the `D` base rate (19.6% of frames).
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Speed distributions conditioned on GT class**:
+
+    | GT Class | Frames | Mean Player Speed (m/s) | Median Player Speed (m/s) | Mean `p90` Player Speed (m/s) | Home Mean Speed (m/s) | Away Mean Speed (m/s) | Derived Ball Speed Med (m/s) |
+    |---|---:|---:|---:|---:|---:|---:|---:|
+    | `H` | 3,454 | **2.21** | 2.13 | 3.43 | 2.11 | 2.31 | 5.30 |
+    | `A` | 2,577 | **2.61** | 2.52 | 4.01 | 2.58 | 2.64 | 6.56 |
+    | `D` | 1,469 | **1.42** | 1.19 | **2.26** | 1.38 | 1.46 | **2.70** |
+
+  - **Single-threshold separability**: The single rule `mean_player_speed < 1.40 m/s` achieves **`Precision = 59.9%`**, **`Recall = 76.8%`**, and **`F1 = 0.6728`** for class `D` (over **3.4× the `19.59%` base rate**, using **zero ball information**).
+  - **Decision outcome**: Collective player speed (`mean`, `p90`, fraction of walking players `< 1.5 m/s`, rolling 2s–5s speed) is our strongest ball-independent dead-ball feature and is essential for separating `D` from occluded live play (`A`/`H`) when the ball is `NaN`.
 
 ---
 
@@ -425,7 +568,16 @@ question in this document's model of the problem. These four questions exist to 
   Dense enough to be a per-frame feature. The heaviest codes are `BALL IN FINAL THIRD` (93 instances)
   and `PLAYERS IN THE BOX` (97), but by frame count the phases (`PROGRESSION`, `DEFENDING IN MIDDLE
   THIRD`) dominate — the two rankings disagree, which is itself the finding.
-- **Answer / Findings**: *(To be answered — add the concurrency histogram)*
+- **Answer / Findings (`[FULL]`)**:
+  - **Coverage**: `139,587 / 199,319` video frames (`70.03%`) and **`130,698 / 158,857` graded frames (`82.27%`)** are covered by `≥ 1` Smart Tagging interval.
+  - **Concurrency histogram on `158,857` graded frames**:
+    - `0` active tags: `28,159f` (**`17.73%`**)
+    - `1` active tag: `38,440f` (**`24.20%`**)
+    - `2` active tags: `42,005f` (**`26.44%`**)
+    - `3` active tags: `20,404f` (**`12.84%`**)
+    - `4` active tags: `13,816f` (**`8.70%`**)
+    - `5+` active tags: `16,033f` (**`10.09%`**, up to `12` simultaneous tags)
+  - **Per-code graded frame coverage (top codes)**: `PLAYERS IN THE BOX` (`72,639f / 45.73%`), `BALL IN FINAL THIRD` (`58,690f / 36.95%`), `SET PIECES` (`43,899f / 27.63%`), `PROGRESSION` (`31,118f / 19.59%`), `DEFENDING IN MIDDLE THIRD` (`31,118f / 19.59%`), `CREATING CHANCES` (`22,500f / 14.16%`), `DEFENDING IN DEFENSIVE THIRD` (`22,500f / 14.16%`), `BUILD UP` (`19,021f / 11.97%`), `DEFENDING IN ATTACKING THIRD` (`19,021f / 11.97%`), `BALL IN THE BOX` (`15,912f / 10.02%`), `SHORT PASS` (`12,068f / 7.60%`), `HIGH PASS` (`8,735f / 5.50%`), `ATTACKING TRANSITION` & `DEFENSIVE TRANSITION` (`8,354f / 5.26%` each), `LONG BALL` (`4,867f / 3.06%`).
 
 ### 7.2 Q7.2 — Do set-piece boundaries align with dead-ball boundaries? `[GT-5MIN]`
 
@@ -445,7 +597,12 @@ question in this document's model of the problem. These four questions exist to 
 - **Decision rule**: `SET PIECES` may only be used as a restart *marker* (a candidate `D → alive`
   boundary), never copied across as a label span. If boundary agreement at ±50 frames is below ~50%,
   drop it from the feature set.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Boundary offsets for the 3 window-overlapping `SET PIECES` (`875f / 35s` or `125f / 5s` templates)**:
+    1. `Kick Off (11,097..11,222, Team=N/A)`: Start offset **`-88f`** to `11,185` (`D → alive` start); End offset **`+37f`** from `11,185`.
+    2. `Free Kick (17,533..18,408, Athletic Club)`: Start offset **`-305f`** to `17,838` (`D → A` restart); End offset **`+19f`** from `18,389` (`D → H` restart, and `+381f` from `18,027` `A → D`).
+    3. `Goal Kick (18,320..19,195, Barcelona)`: Start offset **`-69f`** to `18,389` (`D → H` restart); End offset **`+806f`** from `18,389`.
+  - **Decision outcome**: `0/3` starts and `0/3` ends align within `±50f` of their target transitions (`SET PIECES` boxes are coarse fixed-width `35s` / `875f` video-clip windows around the restart event, typically starting `~70–305f` before the restart). Per the decision rule (`< 50%` boundary agreement at `±50f`), **do not use `SET PIECES` boundaries as transition triggers**, though the `SET PIECES` team tag (when non-`N/A`, e.g. Goal Kick / Corner / Free Kick) carries `96.2%` alive-frame team agreement (see Q7.3).
 
 ### 7.3 Q7.3 — Which codes are on-ball and which are off-ball? `[GT-5MIN]`
 
@@ -475,8 +632,26 @@ question in this document's model of the problem. These four questions exist to 
   average over all codes would land near 0.55 and describe nothing.
 - **Decision rule**: use a per-code sign, derived here and frozen; any code whose implied-possessor
   agreement is below ~60% does not enter the feature set.
-- **Answer / Findings**: *(To be answered — compute the complement agreement for the defensive codes,
-  and the four remaining codes)*
+- **Answer / Findings (`[GT-5MIN]`)**:
+  - **Complete table across all 13 codes active in the window (both All-Window frames and Alive-Only `H/A` frames)**:
+
+    | Code | Role | Window Frames (Alive Frames) | Raw `Tag == GT` (All) | Implied `Poss == GT` (All) | Implied `Poss == GT` (**Alive `H/A` Only**) | Decision (`≥60%` Alive) |
+    |---|---|---:|---:|---:|---:|---|
+    | `BUILD UP` | Offensive (`+1`) | 325 (295) | 90.77% | **90.77%** | **100.00%** | **KEEP** |
+    | `DEFENDING IN ATTACKING THIRD` | Defensive (`-1`) | 325 (295) | 0.00% | **90.77%** | **100.00%** | **KEEP** |
+    | `LONG BALL` | Offensive (`+1`) | 204 (204) | 90.20% | **90.20%** | **90.20%** | **KEEP** |
+    | `PROGRESSION` | Offensive (`+1`) | 2,707 (2,707) | 72.59% | **72.59%** | **72.59%** | **KEEP** |
+    | `DEFENDING IN MIDDLE THIRD` | Defensive (`-1`) | 2,707 (2,707) | 27.41% | **72.59%** | **72.59%** | **KEEP** |
+    | `ATTACKING TRANSITION` | Offensive (`+1`) | 277 (277) | 67.15% | **67.15%** | **67.15%** | **KEEP** |
+    | `DEFENSIVE TRANSITION` | Defensive (`-1`) | 277 (277) | 32.85% | **67.15%** | **67.15%** | **KEEP** |
+    | `SET PIECES` (tagged team) | Offensive (`+1`) | 1,431 (576) | 39.13% | 39.13% | **96.18%** | **KEEP (for H/A)** |
+    | `CREATING CHANCES` | Offensive (`+1`) | 675 (170) | 25.19% | 25.19% | **100.00%** | **KEEP (for H/A)** |
+    | `DEFENDING IN DEFENSIVE THIRD` | Defensive (`-1`) | 675 (170) | 0.00% | 25.19% | **100.00%** | **KEEP (for H/A)** |
+    | `BALL IN FINAL THIRD` | Offensive (`+1`) | 3,886 (3,039) | 42.10% | 42.10% | **53.70%** | **DROP (`<60%`)** |
+    | `PLAYERS IN THE BOX` | Offensive (`+1`) | 4,764 (3,353) | 32.33% | 32.33% | **45.93%** | **DROP (`<60%`)** |
+    | `BALL IN THE BOX` | Offensive (`+1`) | 786 (552) | 30.92% | 30.92% | **44.02%** | **DROP (`<60%`)** |
+
+  - **Key insight**: Notice why `CREATING CHANCES`, `DEFENDING IN DEFENSIVE THIRD`, and `SET PIECES` had low all-frame agreement (`25.2%` and `39.1%`): their intervals in the window overlapped long `D` stoppages (`505/675` frames of `CREATING CHANCES` were `D`), **not** opposing-team possession! Conditional on the ball being alive (`H` or `A`), `CREATING CHANCES` and `DEFENDING IN DEFENSIVE THIRD` have **100.0% implied-possessor accuracy** and `SET PIECES` has **96.2%**. Conversely, spatial zone tags (`BALL IN FINAL THIRD`, `PLAYERS IN THE BOX`, `BALL IN THE BOX`) remain `< 54%` even on alive frames and are dropped as team priors.
 
 ### 7.4 Q7.4 — How much do we lose to `Team = N/A`? `[FULL]`
 
@@ -487,7 +662,14 @@ question in this document's model of the problem. These four questions exist to 
   structural hole exactly at `D → alive` boundaries — the highest-value frames in the whole problem.
 - **Decision rule**: if throw-ins are all `N/A`, do not attempt to fill them from tags; resolve them
   from the tracking's last-touch geometry instead, and record the limitation in the technical document.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[FULL]`)**:
+  - **Complete `Team = N/A` breakdown (`36` instances, `26,500` total instance-frames)**:
+    - `SET PIECES / Throw-in`: **`26 / 26` instances (`100.0%`)**, `22,750` frames (`364` frames in window).
+    - `SET PIECES / Kick Off (After Goal)`: **`4 / 4` instances (`100.0%`)**, `500` frames.
+    - `SET PIECES / Kick Off (Start)`: **`2 / 2` instances (`100.0%`)**, `250` frames (`38` frames in window).
+    - `CREATING CHANCES / None`: `2 / 30` instances (`6.67%`), `1,500` frames.
+    - `DEFENDING IN DEFENSIVE THIRD / None`: `2 / 30` instances (`6.67%`), `1,500` frames.
+  - Confirmed: **100% of throw-ins (`26/26`) and kick-offs (`6/6`) have `Team = N/A`**, so throw-in and kick-off restart attribution must come from player-ball tracking geometry.
 
 ---
 
@@ -500,7 +682,18 @@ question in this document's model of the problem. These four questions exist to 
 - **Why it matters / what it gates**: collective features (team centroid, pressing line, compactness)
   are biased by missing players, and the bias is not uniform across the match.
 - **Measured (2026-10-31)**: mean 20.5 over graded frames (DATA.md); confirm here.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[FULL]`)**:
+  - **Phase-by-phase player tracking density & homography quality (Q8.1 + Q8.3)**:
+
+    | Match Phase | Frames | Mean Tracked Players | `p10 / Med / p90` Players | `< 10` Players (%) | `> 22` Players (%) | Reproj Err Med / p95 |
+    |---|---:|---:|---|---:|---:|---|
+    | `1. Pre-match (0–11,184)` | 11,185 | 15.83 | `0 / 22 / 23` | 26.86% | 26.27% | `0.340 / 0.568` |
+    | `2. 1st Half (11,185–90,651)` | 79,467 | **20.12** | `16 / 21 / 22` | **4.18%** | **0.87%** | `0.224 / 0.352` |
+    | `3. Halftime (90,652–110,807)` | 20,156 | 12.51 | `6 / 12 / 19` | 31.61% | 2.13% | `0.395 / 4.830` |
+    | `4. 2nd Half (110,808–190,197)` | 79,390 | **20.85** | `19 / 22 / 22` | **1.91%** | **3.85%** | `0.237 / 0.363` |
+    | `5. Post-match (190,198–199,318)` | 9,121 | 15.10 | `7 / 14 / 23` | 24.48% | 0.25% | `0.340 / 0.659` |
+
+  - Combined graded play (`158,857` frames) averages **`20.49` tracked players** (`3.05%` of frames have `< 10` players, `2.36%` have `> 22`). Team-aggregate spatial features should normalize by active player count per team (`n_H_active`, `n_A_active`) and pass active counts as reliability features.
 
 ### 8.2 Q8.2 — Does the coordinate frame flip at halftime? `[FULL]`
 
@@ -511,7 +704,10 @@ question in this document's model of the problem. These four questions exist to 
   expensive to find later.
 - **Decision rule**: if the team-mean `x` ordering reverses across halves, every spatial feature must be
   expressed in attack-relative coordinates.
-- **Answer / Findings**: *(To be answered)*
+- **Answer / Findings (`[FULL]`)**:
+  - **1st Half (`11,185–90,651`)**: Home `mean_x = 0.4659`, Away `mean_x = 0.5832`, difference `Home − Away = -0.1173` (**Home attacks Left → Right `+x`**; Away attacks Right → Left `-x`).
+  - **2nd Half (`110,808–190,197`)**: Home `mean_x = 0.5300`, Away `mean_x = 0.4151`, difference `Home − Away = +0.1149` (**Home attacks Right → Left `-x`**; Away attacks Left → Right `+x`).
+  - **Decision outcome**: The pitch `x`-axis is fixed to the stadium camera and **reverses team orientation at halftime**. All longitudinal (`x`) features and velocity `vx` components must be attack-direction-normalized (`x_norm = 1 - x` in 2nd Half, or signed relative to each team's defending goal).
 
 ### 8.3 Q8.3 — (optional, low priority) Tactical homography quality `[FULL]`
 
