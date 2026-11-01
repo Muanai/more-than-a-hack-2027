@@ -2,12 +2,13 @@
 reference/
 
 # Competition data & assets
-data/
+/data/
 *.mp4
 *.m4v
 *.json
 *.csv
 !gt/*.csv
+*.html
 
 # Virtual environments & cache
 .venv/
