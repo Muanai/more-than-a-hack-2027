@@ -266,7 +266,7 @@ def _(
     return
 
 
-@app.cell
+@app.cell(expand_output=True)
 def _(
     FPS,
     ROOT,
