@@ -10,8 +10,10 @@ from typing import Dict, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+import polars as pl
 
 from src.data.loader import MatchData, compute_team_distances_to_ball, load_match_data
+from src.evaluation.diagnostics import diagnose_prediction
 from src.metrics import possession_metrics as pm
 
 # Internal team codes for baseline attribution
@@ -23,10 +25,11 @@ NOBODY = 2
 @dataclass
 class BaselineResult:
     """Output container for baseline predictions and evaluation."""
-    labels: np.ndarray             # (N,) string array: 'H', 'A', 'D'
-    raw_codes: np.ndarray          # (N,) int8 array: HOME (0), AWAY (1), NOBODY (2)
-    metrics: Optional[Dict] = None # Metric evaluation dict if ground truth available
-    window: int = 0                # Smoothing half-window size in frames
+    labels: np.ndarray                     # (N,) string array: 'H', 'A', 'D'
+    raw_codes: np.ndarray                  # (N,) int8 array: HOME (0), AWAY (1), NOBODY (2)
+    metrics: Optional[Dict] = None         # Metric evaluation dict if ground truth available
+    diagnostics: Optional[pl.DataFrame] = None  # Label-free full-match structural diagnostics
+    window: int = 0                        # Smoothing half-window size in frames
 
 
 def predict_nearest_player_raw(data: MatchData) -> np.ndarray:
@@ -108,10 +111,13 @@ def run_baseline_pipeline(
         pred_codes = pm.label_codes(labels)
         metrics = pm.evaluate(gt_codes, pred_codes)
 
+    diagnostics = diagnose_prediction(labels, model_name=f"baseline_w{window}")
+
     return BaselineResult(
         labels=labels,
         raw_codes=raw_codes,
         metrics=metrics,
+        diagnostics=diagnostics,
         window=window,
     )
 
