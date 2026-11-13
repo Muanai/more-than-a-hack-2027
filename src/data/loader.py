@@ -36,6 +36,7 @@ class MatchData:
     slot_is_away: np.ndarray       # (43,) bool: True if slot is Away (Athletic Club)
     graded_mask: np.ndarray        # (N,) bool: True on graded frames (Half 1 + Half 2)
     win_mask: np.ndarray           # (N,) bool: True on 5-min public ground truth window
+    ps_norm: Optional[np.ndarray] = None  # (N, 43) player speed in m/s for 43 valid slots
 
 
 def get_default_data_dir() -> Path:
@@ -71,11 +72,17 @@ def load_match_data(data_dir: Optional[Path] = None) -> MatchData:
     ball_y_norm = tracking_df["ball_y"].to_numpy()
     ball_present = ~np.isnan(ball_x_norm) & ~np.isnan(ball_y_norm)
 
-    # 3. Extract player coordinates only for valid slots (shape N x 43)
+    # 3. Extract player coordinates and speeds only for valid slots (shape N x 43)
     px_cols = [f"p{sid}_x" for sid in valid_slot_ids]
     py_cols = [f"p{sid}_y" for sid in valid_slot_ids]
+    ps_cols = [f"p{sid}_speed" for sid in valid_slot_ids]
     px_norm = np.column_stack([tracking_df[col].to_numpy() for col in px_cols])
     py_norm = np.column_stack([tracking_df[col].to_numpy() for col in py_cols])
+    ps_norm = (
+        np.column_stack([tracking_df[col].to_numpy() for col in ps_cols])
+        if all(col in tracking_df.columns for col in ps_cols)
+        else None
+    )
 
     # 4. Construct masks
     n_frames = len(frames)
@@ -98,7 +105,19 @@ def load_match_data(data_dir: Optional[Path] = None) -> MatchData:
         slot_is_away=is_away_mask,
         graded_mask=graded_mask,
         win_mask=win_mask,
+        ps_norm=ps_norm,
     )
+
+
+def load_smart_tagging(data_dir: Optional[Path] = None) -> pl.DataFrame:
+    """Load processed Smart Tagging interval events parquet."""
+    if data_dir is None:
+        data_dir = get_default_data_dir()
+
+    tagging_path = data_dir / "smart_tagging.parquet"
+    if not tagging_path.exists():
+        raise FileNotFoundError(f"Smart tagging parquet not found at: {tagging_path}")
+    return pl.read_parquet(tagging_path)
 
 
 def compute_team_distances_to_ball(data: MatchData) -> Tuple[np.ndarray, np.ndarray]:
