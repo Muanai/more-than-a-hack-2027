@@ -117,18 +117,24 @@ def _fit_lr_hgb_expert(
     sample_weight: np.ndarray,
     X_eval: np.ndarray,
     seed: int = 42,
+    c_reg: float = 0.25,
+    max_iter: int = 150,
+    max_depth: int = 5,
+    min_samples_leaf: int = 80,
+    l2_regularization: float = 0.0,
 ) -> np.ndarray:
     """Fit a balanced LogisticRegression + HistGradientBoosting ensemble."""
     scaler = StandardScaler()
     X_tr_std = scaler.fit_transform(X_train)
-    lr = LogisticRegression(C=0.25, max_iter=500, random_state=seed)
+    lr = LogisticRegression(C=c_reg, max_iter=500, random_state=seed)
     lr.fit(X_tr_std, y_train, sample_weight=sample_weight)
 
     hgb = HistGradientBoostingClassifier(
-        max_iter=150,
-        max_depth=5,
+        max_iter=max_iter,
+        max_depth=max_depth,
         learning_rate=0.05,
-        min_samples_leaf=80,
+        min_samples_leaf=min_samples_leaf,
+        l2_regularization=l2_regularization,
         random_state=seed,
     )
     hgb.fit(X_train, y_train, sample_weight=sample_weight)
@@ -162,22 +168,34 @@ def _augment_occlusion_copies(
     col_names: Sequence[str],
     rng: np.random.Generator,
     mask_ball_local: bool,
+    carried_cols: Sequence[str] | None = None,
+    ball_mask_cols: Sequence[str] | None = None,
+    slow_carry_col: str | None = None,
 ) -> np.ndarray:
     """Synthesize occluded training copies by decaying carried margin and masking local cues."""
     X_aug = X_clean.copy()
     name_to_idx = {name: i for i, name in enumerate(col_names)}
+    c_cols = tuple(carried_cols) if carried_cols is not None else ("carried_nw",)
+    b_cols = tuple(ball_mask_cols) if ball_mask_cols is not None else BALL_DROP_MASK_COLS
 
     if mask_ball_local:
         drop_ball = rng.random(len(X_aug)) < 0.50
-        for col in BALL_DROP_MASK_COLS:
-            X_aug[drop_ball, name_to_idx[col]] = 0.0
+        for col in b_cols:
+            if col in name_to_idx:
+                X_aug[drop_ball, name_to_idx[col]] = 0.0
         X_aug[drop_ball, name_to_idx["den_nw"]] = 0.0
-        c_idx = name_to_idx["carried_nw"]
-        X_aug[drop_ball, c_idx] *= rng.uniform(0.1, 0.6, size=int(drop_ball.sum()))
+        scale = rng.uniform(0.1, 0.6, size=int(drop_ball.sum()))
+        for col in c_cols:
+            X_aug[drop_ball, name_to_idx[col]] *= scale
+        if slow_carry_col is not None and slow_carry_col in name_to_idx:
+            X_aug[drop_ball, name_to_idx[slow_carry_col]] *= rng.uniform(
+                0.1, 0.5, size=int(drop_ball.sum())
+            )
     else:
         drop_cnw = rng.random(len(X_aug)) < 0.45
-        c_idx = name_to_idx["carried_nw"]
-        X_aug[drop_cnw, c_idx] *= rng.uniform(0.0, 0.3, size=int(drop_cnw.sum()))
+        scale = rng.uniform(0.0, 0.3, size=int(drop_cnw.sum()))
+        for col in c_cols:
+            X_aug[drop_cnw, name_to_idx[col]] *= scale
 
     drop_tag = rng.random(len(X_aug)) < 0.35
     X_aug[drop_tag, name_to_idx["tag_prior_dedup"]] = 0.0
