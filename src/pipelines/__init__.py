@@ -3,6 +3,7 @@ from src.pipelines.ablation import (
     run_ablation1_decoupled,
     run_ablation2_features_tagging,
     run_ablation3_sequence_decoder,
+    run_ablation4_step1_physics,
     run_all_ablations,
 )
 from src.pipelines.baseline import (
@@ -22,6 +23,7 @@ __all__ = [
     "run_ablation1_decoupled",
     "run_ablation2_features_tagging",
     "run_ablation3_sequence_decoder",
+    "run_ablation4_step1_physics",
     "run_all_ablations",
 ]
 

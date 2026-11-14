@@ -27,6 +27,7 @@ from src.data.loader import (
     load_smart_tagging,
 )
 from src.evaluation.diagnostics import compare_models_full_match, diagnose_prediction
+from src.features.possession_features import build_possession_features
 from src.metrics import possession_metrics as pm
 from src.pipelines.baseline import (
     AWAY,
@@ -424,6 +425,31 @@ def run_ablation2_features_tagging(
     return _finalize_result(labels, "ablation2_features_tags", gt_csv_path, window=38)
 
 
+def _decode_viterbi_states(
+    n_frames: int,
+    emit_ha: np.ndarray,
+    emit_d: np.ndarray,
+    pen_ha: float = -16.0,
+    pen_d: float = -24.0,
+) -> np.ndarray:
+    """Decode H/A/D sequence per half via 3-state Viterbi DP and absorb <1s fragments."""
+    emit = np.column_stack([emit_ha, -emit_ha, emit_d])
+    trans_mat = np.array(
+        [
+            [0.0, pen_ha, pen_d],
+            [pen_ha, 0.0, pen_d],
+            [pen_d, pen_d, 0.0],
+        ],
+        dtype=np.float64,
+    )
+    labels = np.full(n_frames, "X", dtype="<U1")
+    state_map = np.array(["H", "A", "D"], dtype="<U1")
+    for start, stop in HALF_RANGES:
+        path = viterbi_decode_half(emit[start:stop], trans_mat)
+        labels[start:stop] = state_map[path]
+    return cleanup_short_spells(labels, min_spell_frames=25)
+
+
 def run_ablation3_sequence_decoder(
     data: Optional[MatchData] = None,
     tag_df: Optional[pl.DataFrame] = None,
@@ -440,25 +466,31 @@ def run_ablation3_sequence_decoder(
 
     emit_ha = box_smooth_half(ha_score2, 14)
     emit_d = np.where(d_mask2, 1.30, -0.55)
-    emit = np.column_stack([emit_ha, -emit_ha, emit_d])
-
-    trans_mat = np.array(
-        [
-            [0.0, -16.0, -24.0],
-            [-16.0, 0.0, -24.0],
-            [-24.0, -24.0, 0.0],
-        ],
-        dtype=np.float64,
-    )
-
-    labels = np.full(len(data.frames), "X", dtype="<U1")
-    state_map = np.array(["H", "A", "D"], dtype="<U1")
-    for start, stop in HALF_RANGES:
-        path = viterbi_decode_half(emit[start:stop], trans_mat)
-        labels[start:stop] = state_map[path]
-
-    labels = cleanup_short_spells(labels, min_spell_frames=25)
+    labels = _decode_viterbi_states(len(data.frames), emit_ha, emit_d)
     return _finalize_result(labels, "ablation3_viterbi", gt_csv_path, window=14)
+
+
+def run_ablation4_step1_physics(
+    data: Optional[MatchData] = None,
+    tag_df: Optional[pl.DataFrame] = None,
+    gt_csv_path: Optional[Union[str, Path]] = None,
+) -> BaselineResult:
+    """Ablation 4 (Step 1): Occlusion-aware collective velocity + deduplicated Smart Tagging + Viterbi."""
+    if data is None:
+        data = load_match_data()
+    if tag_df is None:
+        tag_df = load_smart_tagging()
+
+    pf = build_possession_features(data=data, tag_df=tag_df)
+    den_nw = pf.den_nw
+    w_tag = np.where(den_nw < 0.10, 0.35, np.where(den_nw < 0.25, 0.15, 0.05))
+    w_vx = np.where(den_nw < 0.10, 0.25, 0.05)
+
+    ha_score4 = pf.nw_margin + w_tag * pf.tag_prior_dedup + w_vx * (pf.features["all_vx_s"] / 1.5)
+    emit_ha = box_smooth_half(ha_score4, 14)
+    emit_d = np.where(pf.d_mask, 1.30, -0.55)
+    labels = _decode_viterbi_states(len(data.frames), emit_ha, emit_d)
+    return _finalize_result(labels, "ablation4_step1_physics", gt_csv_path, window=14)
 
 
 def run_all_ablations(
@@ -467,7 +499,7 @@ def run_all_ablations(
     gt_csv_path: Optional[Union[str, Path]] = None,
     save_best_to: Optional[Union[str, Path]] = None,
 ) -> Tuple[pl.DataFrame, pl.DataFrame, Dict[str, BaselineResult]]:
-    """Run baseline benchmarks + all 3 ablations and compare on full match + public window."""
+    """Run baseline benchmarks + all 4 ablations and compare on full match + public window."""
     if data is None:
         data = load_match_data()
     if tag_df is None:
@@ -485,11 +517,14 @@ def run_all_ablations(
         "ablation3_viterbi": run_ablation3_sequence_decoder(
             data=data, tag_df=tag_df, gt_csv_path=gt_csv_path
         ),
+        "ablation4_step1_physics": run_ablation4_step1_physics(
+            data=data, tag_df=tag_df, gt_csv_path=gt_csv_path
+        ),
     }
 
     if save_best_to is not None:
         save_submission(
-            results["ablation3_viterbi"].labels,
+            results["ablation4_step1_physics"].labels,
             save_best_to,
             ungraded_to_x=True,
             graded_mask=data.graded_mask,
@@ -505,10 +540,10 @@ if __name__ == "__main__":
     pl.Config.set_tbl_rows(-1)
     pl.Config.set_tbl_width_chars(240)
 
-    out_sub = Path("data/predictions/ablation3_viterbi.csv")
+    out_sub = Path("data/predictions/ablation4_step1_physics.csv")
     summary_df, detailed_df, _ = run_all_ablations(save_best_to=out_sub)
 
-    print("=== 3-STAGE ABLATION STUDY: FULL-MATCH VS PUBLIC 5-MIN WINDOW ===")
+    print("=== 4-STAGE ABLATION STUDY: FULL-MATCH VS PUBLIC 5-MIN WINDOW ===")
     print(summary_df)
 
     focus_models = [
@@ -516,8 +551,9 @@ if __name__ == "__main__":
         "ablation1_decoupled",
         "ablation2_features_tags",
         "ablation3_viterbi",
+        "ablation4_step1_physics",
     ]
-    print("\n=== PER-SLICE BREAKDOWN (GT + 3 ABLATION STAGES) ===")
+    print("\n=== PER-SLICE BREAKDOWN (GT + 4 ABLATION STAGES) ===")
     print(detailed_df.filter(pl.col("model").is_in(focus_models)))
     print(f"\nSaved validated submission to: {out_sub}")
 
